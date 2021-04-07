@@ -1,0 +1,412 @@
+#sudo ansible-playbook -vvv playbooks/zabbix-agent-container-metric-setup.yml
+---
+ - hosts: localhost
+   connection: local
+   gather_facts: no
+   vars:
+     zabbix_server_admin_username: Admin
+     zabbix_server_admin_password: zabbix
+     zabbix_server_ip: 192.168.0.27
+     hostname: Hostname not being passed
+     new_value: Token key not being passed
+     eventID: Event ID is not being passed
+     alex_all_debug: True
+   tasks:
+     - name: Split Token
+       set_fact:
+         token_part_1: "{{ new_value[:250] }}"
+         token_part_2: "{{ new_value[250:500] }}"
+         token_part_3: "{{ new_value[500:750] }}"
+         token_part_4: "{{ new_value[750:1000] }}"
+         token_part_5: "{{ new_value[1000:1250] }}"
+         token_part_6: "{{ new_value[1250:] }}"
+     - debug:
+         msg: "{ token_part_1 }}{{token_part_2}}{{token_part_3}}{{token_part_4}}{{token_part_5}}{{token_part_6}}"
+       when: alex_all_debug == True
+
+
+
+## get a token from the zabbix api to use in the rest of the playbook
+     - name: get zabbix token
+       uri:
+         url: "http://{{ zabbix_server_ip }}:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: 2.0
+           method: user.login
+           id: 1
+           params:
+             user: "{{ zabbix_server_admin_username }}"
+             password: "{{zabbix_server_admin_password }}"
+       register: zabbix_get_token_raw
+     - debug:
+         msg: "{{ zabbix_get_token_raw.json }}"
+       when: alex_all_debug == True
+     - name: set facts for the json output of the token
+       set_fact:
+         zabbix_api_token_version: "{{ zabbix_get_token_raw.json.jsonrpc }}"
+         zabbix_api_token_id: "{{ zabbix_get_token_raw.json.id }}"
+         zabbix_api_token_current: "{{ zabbix_get_token_raw.json.result }}"
+
+## example call to do a get for a specific host via zabbix api with ansible
+     - name: get details about a host
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: host.get
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             output: "hostid"
+             filter:
+               host: "{{ hostname }}"
+       register: zabbix_api_get_details_host
+     - debug:
+         msg: "{{ zabbix_api_get_details_host.json }}"
+       when: alex_all_debug == True
+     - name: Save Host ID
+       set_fact:
+         host_id: "{{ zabbix_api_get_details_host.json.result[0]}}"
+
+## GATHER MACRO 1
+     - name: Gather Macro One
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.get
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             output: "extend"
+             hostids: "{{ host_id }}"
+             filter:
+               macro: "{$ZABBIXTOKEN1}"
+       register: zabbix_api_get_macros_host
+     - debug:
+         msg: "{{ zabbix_api_get_macros_host.json }}"
+       when: alex_all_debug == True
+     - name: Save Host ID
+       set_fact:
+         macro_info: "{{ zabbix_api_get_macros_host.json.result }}"
+         macro_id: "{{ zabbix_api_get_macros_host.json.result[0].hostmacroid }}"
+
+### UPDATE MACRO 1
+     - name: Update Macro One
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.update
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             hostmacroid: "{{ macro_id }}"
+             value: "{{ token_part_1 }}"
+       register: zabbix_api_update_macros_host
+     - debug:
+         msg: "{{ zabbix_api_update_macros_host.json }}"
+       when: alex_all_debug == True
+
+### GATHER MACRO 2
+     - name: Gather Macro Two
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.get
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             output: "extend"
+             hostids: "{{ host_id }}"
+             filter:
+               macro: "{$ZABBIXTOKEN2}"
+       register: zabbix_api_get_macros_host
+     - debug:
+         msg: "{{ zabbix_api_get_macros_host.json }}"
+       when: alex_all_debug == True
+     - name: Save Host ID
+       set_fact:
+         macro_info: "{{ zabbix_api_get_macros_host.json.result }}"
+         macro_id: "{{ zabbix_api_get_macros_host.json.result[0].hostmacroid }}"
+
+### UPDATE MARCO 2
+     - name: Update Macro Two
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.update
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             hostmacroid: "{{ macro_id }}"
+             value: "{{ token_part_2 }}"
+       register: zabbix_api_update_macros_host
+     - debug:
+         msg: "{{ zabbix_api_update_macros_host.json }}"
+       when: alex_all_debug == True
+
+### GATHER MACRO 3
+     - name: Gather Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.get
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             output: "extend"
+             hostids: "{{ host_id }}"
+             filter:
+               macro: "{$ZABBIXTOKEN3}"
+       register: zabbix_api_get_macros_host
+     - debug:
+         msg: "{{ zabbix_api_get_macros_host.json }}"
+       when: alex_all_debug == True
+     - name: Save Host ID
+       set_fact:
+         macro_info: "{{ zabbix_api_get_macros_host.json.result }}"
+         macro_id: "{{ zabbix_api_get_macros_host.json.result[0].hostmacroid }}"
+
+     - name: Update Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.update
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             hostmacroid: "{{ macro_id }}"
+             value: "{{ token_part_3 }}"
+       register: zabbix_api_update_macros_host
+     - debug:
+         msg: "{{ zabbix_api_update_macros_host.json }}"
+       when: alex_all_debug == True
+
+### GATHER MACRO 4
+     - name: Gather Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.get
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             output: "extend"
+             hostids: "{{ host_id }}"
+             filter:
+               macro: "{$ZABBIXTOKEN4}"
+       register: zabbix_api_get_macros_host
+     - debug:
+         msg: "{{ zabbix_api_get_macros_host.json }}"
+       when: alex_all_debug == True
+     - name: Save Host ID
+       set_fact:
+         macro_info: "{{ zabbix_api_get_macros_host.json.result }}"
+         macro_id: "{{ zabbix_api_get_macros_host.json.result[0].hostmacroid }}"
+
+### UPDATE MACRO 4
+     - name: Update Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.update
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             hostmacroid: "{{ macro_id }}"
+             value: "{{ token_part_4 }}"
+       register: zabbix_api_update_macros_host
+     - debug:
+         msg: "{{ zabbix_api_update_macros_host.json }}"
+       when: alex_all_debug == True
+
+
+#### GATHER MACRO 5
+     - name: Gather Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.get
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             output: "extend"
+             hostids: "{{ host_id }}"
+             filter:
+               macro: "{$ZABBIXTOKEN5}"
+       register: zabbix_api_get_macros_host
+     - debug:
+         msg: "{{ zabbix_api_get_macros_host.json }}"
+       when: alex_all_debug == True
+     - name: Save Host ID
+       set_fact:
+         macro_info: "{{ zabbix_api_get_macros_host.json.result }}"
+         macro_id: "{{ zabbix_api_get_macros_host.json.result[0].hostmacroid }}"
+
+### UDPATE MACRO 5
+     - name: Update Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.update
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             hostmacroid: "{{ macro_id }}"
+             value: "{{ token_part_5 }}"
+       register: zabbix_api_update_macros_host
+     - debug:
+         msg: "{{ zabbix_api_update_macros_host.json }}"
+       when: alex_all_debug == True
+
+#### GATHER MACRO 6
+     - name: Gather Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.get
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             output: "extend"
+             hostids: "{{ host_id }}"
+             filter:
+               macro: "{$ZABBIXTOKEN6}"
+       register: zabbix_api_get_macros_host
+     - debug:
+         msg: "{{ zabbix_api_get_macros_host.json }}"
+       when: alex_all_debug == True
+     - name: Save Host ID
+       set_fact:
+         macro_info: "{{ zabbix_api_get_macros_host.json.result }}"
+         macro_id: "{{ zabbix_api_get_macros_host.json.result[0].hostmacroid }}"
+
+### UDPATE MACRO 6
+     - name: Update Host Macros
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: usermacro.update
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             hostmacroid: "{{ macro_id }}"
+             value: "{{ token_part_6 }}"
+       register: zabbix_api_update_macros_host
+     - debug:
+         msg: "{{ zabbix_api_update_macros_host.json }}"
+       when: alex_all_debug == True
+## example call to do a get for a specific host via zabbix api with ansible
+     - name: ack event
+       uri:
+         url: "http://127.0.0.1:8080/api_jsonrpc.php"
+         method: POST
+         force_basic_auth: yes
+         body_format: json
+         user: "{{ zabbix_server_admin_username }}"
+         return_content: yes
+         password: "{{ zabbix_server_admin_password }}"
+         body:
+           jsonrpc: "{{ zabbix_api_token_version }}"
+           method: event.acknowledge
+           id: "{{ zabbix_api_token_id }}"
+           auth: "{{ zabbix_api_token_current }}"
+           params:
+             eventids: "{{ eventID}}"
+             message: "Playbook Automagically resolved the trigger"
+             action: 1
